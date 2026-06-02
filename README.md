@@ -1,0 +1,1 @@
+Fine-tune YOLO model to recognize angle and pins amount on chips
