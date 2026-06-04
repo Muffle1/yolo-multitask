@@ -5,6 +5,16 @@ build/
 dist/
 wheels/
 *.egg-info
+dataset/
+augmented/
+test_images/
+test_labels/
+runs/
 
 # Virtual environments
 .venv
+
+# Train files
+train.py
+graph_corners.yaml
+*.pt
