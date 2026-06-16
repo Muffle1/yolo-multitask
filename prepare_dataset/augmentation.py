@@ -162,6 +162,42 @@ class Augmentation:
                 )
 
         return img
+    
+    def add_glare(self, image: np.ndarray) -> np.ndarray:
+        h, w = image.shape[:2]
+
+        overlay = np.zeros((h, w), dtype=np.float32)
+
+        cx = random.randint(0, w - 1)
+        cy = random.randint(0, h - 1)
+
+        radius = random.randint(
+            int(min(w, h) * 0.05),
+            int(min(w, h) * 0.25)
+        )
+
+        intensity = random.uniform(30, 120)
+
+        cv2.circle(
+            overlay,
+            (cx, cy),
+            radius,
+            intensity,
+            -1
+        )
+
+        overlay = cv2.GaussianBlur(
+            overlay,
+            (0, 0),
+            sigmaX=radius / 2
+        )
+
+        result = image.astype(np.float32)
+
+        for c in range(3):
+            result[:, :, c] += overlay
+
+        return np.clip(result, 0, 255).astype(np.uint8)
 
     def transform_coordinates(
         self,
@@ -300,6 +336,10 @@ class Augmentation:
                     augmented_image,
                     self.config,
                 )
+
+                if getattr(self.config, "glare_chance", None) and random.random() < self.config.glare_chance:
+                    for _ in range(random.randint(1, 4)):
+                        augmented_image = self.add_glare(augmented_image)
 
                 suffix = f"_aug{i + 1}"
                 target_image_name = f"image{suffix}.png"

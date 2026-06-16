@@ -13,6 +13,7 @@ class AugmentationConfig:
     hue_range: tuple[float, float] = (0.8, 1.2)
     noise_std_range: tuple[float, float] = (0.0, 6.0)
     blur_kernel_range: list[int] = (1, 1, 3, 3, 5)
+    glare_chance: float = 0.3
     amount: int = 100
     label_format: list[str] | None = None
     train_val_split: float = 0.8
