@@ -4,10 +4,10 @@ from pathlib import Path
 import json
 from typing import Any
 
-from ultralytics import YOLO
-
 from prepare_dataset.augmentation import Augmentation
 from prepare_dataset.config import AugmentationConfig
+
+from model.train import fit
 
 
 def load_json_config(config_path: Path | str) -> AugmentationConfig:
@@ -33,55 +33,17 @@ def load_json_config(config_path: Path | str) -> AugmentationConfig:
 
 
 def train_model(args: argparse.Namespace) -> None:
-    model = YOLO(args.model)
-    print("Starting training:")
-    print(f"  dataset = {args.data_dir}")
-    print(f"  weights = {args.model}")
-    model.train(
+    fit(
         data=str(args.data_dir),
-        epochs=args.epochs,
-        imgsz=args.imgsz,
-        batch=args.batch_size,
-        device=args.device,
-        project=str(args.project),
-        name=args.name,
     )
 
 
 def infer_model(args: argparse.Namespace) -> None:
-    model = YOLO(args.weights)
-    output_dir = Path(args.output_dir) if args.output_dir else Path("runs/infer")
-    result = model.predict(
-        source=str(args.source),
-        save=True,
-        project=str(output_dir),
-        name=args.name,
-        imgsz=args.imgsz,
-        device=args.device,
-        conf=args.conf_thres,
-        max_det=args.max_det,
-    )
-    print(f"Inference completed. Predictions saved under {output_dir / args.name}")
-    if result:
-        print(result)
+    pass
 
 
 def profile_model(args: argparse.Namespace) -> None:
-    model = YOLO(args.weights)
-    source = str(args.source)
-    print("Profiling inference performance...")
-    start_time = time.perf_counter()
-    model.predict(
-        source=source,
-        save=False,
-        imgsz=args.imgsz,
-        device=args.device,
-        conf=args.conf_thres,
-        max_det=args.max_det,
-    )
-    end_time = time.perf_counter()
-    elapsed = end_time - start_time
-    print(f"Profile complete: elapsed={elapsed:.3f}s for source={source}")
+    pass
 
 
 def augment_dataset(args: argparse.Namespace) -> None:
