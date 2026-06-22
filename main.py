@@ -62,7 +62,7 @@ def augment_dataset(args: argparse.Namespace) -> None:
     print(f"Found {len(image_paths)} images to augment in {images_dir}")
 
     augmenter = Augmentation(config, output_dir)
-    augmenter.augment(image_paths, labels_dir)
+    augmenter.augment(image_paths, labels_dir, args.workers)
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="YOLO multitask utility: train, infer, profile, augment")
@@ -102,6 +102,7 @@ def build_parser() -> argparse.ArgumentParser:
     augment_parser.add_argument("--output-dir", default="augmented", help="Directory for augmented dataset")
     augment_parser.add_argument("--config", required=True, help="JSON config file for augmentation")
     augment_parser.add_argument("--amount", type=int, default=None, help="Number of augmented copies per image")
+    augment_parser.add_argument("--workers", type=int, default=8, help="Number of worker processes for augmentation")
 
     return parser
 

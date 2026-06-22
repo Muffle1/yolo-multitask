@@ -5,6 +5,9 @@ from typing import Any
 import cv2
 import numpy as np
 
+from concurrent.futures import ProcessPoolExecutor, as_completed
+import os
+
 from .config import AugmentationConfig
 from .parser import parse_label_file, parse_label_line
 
@@ -306,81 +309,114 @@ class Augmentation:
             image_cp,
         )
 
-    def augment(self, images_dir, labels_dir):
+    def augment_one_image(self, image_path: Path, labels_dir: Path, start_index: int) -> int:
+        image = cv2.imread(str(image_path), cv2.IMREAD_COLOR)
+
+        if image is None:
+            print(f"Skip unreadable image: {image_path}")
+            return 0
+
+        label_path = labels_dir / f"{image_path.stem}.txt"
+        labels = parse_label_file(label_path) if label_path.exists() else []
+
+        created = 0
+
+        for local_idx in range(self.config.amount):
+            global_idx = start_index + local_idx
+
+            augmented_image, affine_matrix, ops = self.apply_geometric_transforms(
+                image,
+                self.config,
+            )
+
+            augmented_image = self.apply_visual_transforms(
+                augmented_image,
+                self.config,
+            )
+
+            augmented_image = self.apply_noise_and_blur(
+                augmented_image,
+                self.config,
+            )
+
+            if getattr(self.config, "glare_chance", None) and random.random() < self.config.glare_chance:
+                for _ in range(random.randint(1, 4)):
+                    augmented_image = self.add_glare(augmented_image)
+
+            suffix = f"_aug{global_idx}"
+            target_image_name = f"image{suffix}.png"
+
+            is_train = random.random() < self.config.train_val_split
+
+            if is_train:
+                image_out_path = self.output_images_train / target_image_name
+                label_out_path = self.output_labels_train / f"image{suffix}.txt"
+            else:
+                image_out_path = self.output_images_val / target_image_name
+                label_out_path = self.output_labels_val / f"image{suffix}.txt"
+
+            cv2.imwrite(str(image_out_path), augmented_image)
+
+            transformed_labels = []
+
+            if labels and self.config.label_format:
+                for line in labels:
+                    parsed = parse_label_line(line, self.config.label_format)
+
+                    if "raw" in parsed:
+                        transformed_labels.append(parsed["raw"])
+                    else:
+                        transformed = self.transform_coordinates(
+                            parsed,
+                            (augmented_image.shape[1], augmented_image.shape[0]),
+                            affine_matrix,
+                        )
+                        transformed_labels.append(
+                            self.serialize_label(
+                                transformed,
+                                self.config.label_format,
+                            )
+                        )
+
+                self.save_label_file(label_out_path, transformed_labels)
+
+                self.draw_bounding_boxes(
+                    augmented_image,
+                    transformed_labels,
+                    suffix,
+                )
+
+            created += 1
+
+        return created
+
+    def augment(self, images_dir, labels_dir, workers: int | None = None) -> None:
         image_paths = list(images_dir)
 
-        i = 0
+        if workers is None:
+            workers = max(1, os.cpu_count() - 1)
 
-        for image_path in image_paths:
-            image = cv2.imread(str(image_path), cv2.IMREAD_COLOR)
+        tasks = []
 
-            if image is None:
-                print(f"Skip unreadable image: {image_path}")
-                continue
+        for image_idx, image_path in enumerate(image_paths):
+            start_index = image_idx * self.config.amount + 1
+            tasks.append((image_path, labels_dir, start_index))
 
-            label_path = labels_dir / f"{image_path.stem}.txt"
-            labels = parse_label_file(label_path) if label_path.exists() else []
+        total_created = 0
 
-            for _ in range(self.config.amount):
-                augmented_image, affine_matrix, ops = self.apply_geometric_transforms(
-                    image,
-                    self.config,
+        with ProcessPoolExecutor(max_workers=workers) as executor:
+            futures = [
+                executor.submit(
+                    self.augment_one_image,
+                    image_path,
+                    labels_dir,
+                    start_index,
                 )
+                for image_path, labels_dir, start_index in tasks
+            ]
 
-                augmented_image = self.apply_visual_transforms(
-                    augmented_image,
-                    self.config,
-                )
+            for future in as_completed(futures):
+                total_created += future.result()
+                print(f"Created: {total_created}")
 
-                augmented_image = self.apply_noise_and_blur(
-                    augmented_image,
-                    self.config,
-                )
-
-                if getattr(self.config, "glare_chance", None) and random.random() < self.config.glare_chance:
-                    for _ in range(random.randint(1, 4)):
-                        augmented_image = self.add_glare(augmented_image)
-
-                suffix = f"_aug{i + 1}"
-                target_image_name = f"image{suffix}.png"
-
-                is_train = random.random() < self.config.train_val_split
-
-                if is_train:
-                    image_out_path = self.output_images_train / target_image_name
-                    label_out_path = self.output_labels_train / f"image{suffix}.txt"
-                else:
-                    image_out_path = self.output_images_val / target_image_name
-                    label_out_path = self.output_labels_val / f"image{suffix}.txt"
-
-                cv2.imwrite(str(image_out_path), augmented_image)
-
-                transformed_labels = []
-
-                if labels and self.config.label_format:
-                    for line in labels:
-                        parsed = parse_label_line(line, self.config.label_format)
-
-                        if "raw" in parsed:
-                            transformed_labels.append(parsed["raw"])
-                        else:
-                            transformed = self.transform_coordinates(
-                                parsed,
-                                (augmented_image.shape[1], augmented_image.shape[0]),
-                                affine_matrix,
-                            )
-                            transformed_labels.append(
-                                self.serialize_label(
-                                    transformed,
-                                    self.config.label_format,
-                                )
-                            )
-
-                    self.save_label_file(label_out_path, transformed_labels)
-                    self.draw_bounding_boxes(
-                        augmented_image,
-                        transformed_labels,
-                        suffix,
-                    )
-
-                i += 1
+        print(f"Done. Total augmented images: {total_created}")
